@@ -6,11 +6,13 @@
 # LICENSE file in the root directory of this source tree.
 
 import json
+import pickle as pkl
 import logging
 import os
 import tarfile
 import warnings
 from os import path as osp
+from collections import defaultdict
 from typing import Dict, Optional, Tuple
 
 import numpy as np
@@ -66,7 +68,11 @@ class Craft3DDataset(Dataset):
         if not self._has_raw_data():
             self._download()
 
+        # load segmentation mapping to match labels to coords
+        self._load_segmentations()
+        # load in placed.json, with blocks sorted by time placed
         self._load_dataset()
+        # enforce local distance maximum
         self._find_valid_items()
 
         self.print_stats()
@@ -126,7 +132,7 @@ class Craft3DDataset(Dataset):
             where A is the number of next steps to be considered as targets.
         """
         house_id, block_id = self._flattened_valid_indices[index]
-        annotation = self._all_houses[house_id]
+        annotation, _ = self._all_houses[house_id]
         inputs = Craft3DDataset.prepare_inputs(
             annotation[: block_id + 1],
             local_size=self.local_size,
@@ -142,7 +148,7 @@ class Craft3DDataset(Dataset):
 
     def get_house(self, index: int) -> torch.Tensor:
         """ Get the annotation for the index-th house. Use for thorough evaluation """
-        return self._all_houses[index]
+        return self._all_houses[index][0]
 
     def get_num_houses(self) -> int:
         """ Get the total number of houses. Use for thorough evaluation """
@@ -312,9 +318,10 @@ class Craft3DDataset(Dataset):
 
         extracted_dir = osp.join(self.data_dir, "houses")
         if not osp.isdir(extracted_dir):
-            self._log(f"Extracting dataset to {extracted_dir}")
-            tar = tarfile.open(tar_path, "r")
-            tar.extractall(self.data_dir)
+            raise RuntimeError('data dir missing files')
+            #self._log(f"Extracting dataset to {extracted_dir}")
+            #tar = tarfile.open(tar_path, "r")
+            #tar.extractall(self.data_dir)
 
     def _load_dataset(self):
         splits_path = osp.join(self.data_dir, "splits.json")
@@ -331,9 +338,9 @@ class Craft3DDataset(Dataset):
             if not osp.isfile(annotation):
                 warnings.warn(f"No annotation file for: {annotation}")
                 continue
-            annotation = self._load_annotation(annotation)
+            annotation, labels = self._load_annotation(annotation)
             if len(annotation) >= 100:
-                self._all_houses.append(annotation)
+                self._all_houses.append((annotation, labels))
                 max_len = max(max_len, len(annotation))
 
         if self.next_steps <= 0:
@@ -345,6 +352,7 @@ class Craft3DDataset(Dataset):
         final_house = {}
         types_and_coords = []
         last_timestamp = -1
+        workdir = annotation_path.split("/")[5]
         for i, item in enumerate(annotation):
             timestamp, annotator_id, coordinate, block_info, action = item
             assert timestamp >= last_timestamp
@@ -358,21 +366,61 @@ class Craft3DDataset(Dataset):
             types_and_coords.append((block_type,) + coordinate)
         indices = sorted(final_house.values())
         types_and_coords = [types_and_coords[i] for i in indices]
-        return torch.tensor(types_and_coords, dtype=torch.int64)
+        
+        if len(types_and_coords) == 0:
+            return torch.tensor(types_and_coords, dtype=torch.int64), []
+
+        _, x, y, z = list(zip(*types_and_coords))
+        min_x, min_y, min_z = min(x), min(y), min(z)
+        # store labels
+        labels = []
+        for i, (b, x, y, z) in enumerate(types_and_coords):
+            coord = (x - min_x, y - min_y, z - min_z)
+            coord2label = self.workdir2coord2label.get(workdir, None)
+            if coord2label is not None:
+                labels.append(coord2label.get(coord, "none"))
+            else:
+                labels.append("none")
+        return torch.tensor(types_and_coords, dtype=torch.int64), labels
+
+    def _load_segmentations(self):
+        """Returns dictionary from workdirs to {coord: label} mapping."""
+
+        workdir2coord2label = {}
+        seg_data_pth = "/scr/kayburns/instance_segmentation_data/{}_data.pkl"
+        for split in ["training", "validation"]:
+            houses = pkl.load(open(seg_data_pth.format(split), "rb"))
+            for house in houses:
+                schem, inst_seg, instid2labels, workdir = house
+
+                # reformat inst_seg to map from coords to labels
+                coords2segs = {}
+                coords = np.vstack(inst_seg.nonzero()).T
+                segs = inst_seg[inst_seg.nonzero()].astype(int)
+                for i in range(len(segs)):
+                    coords2segs[tuple(coords[i])] = instid2labels[segs[i]]
+
+                workdir2coord2label[workdir] = coords2segs
+
+        self.workdir2coord2label = workdir2coord2label
 
     def _find_valid_items(self):
         self._valid_indices = {}
-        for i, annotation in enumerate(self._all_houses):
+        for i, (annotation, _) in enumerate(self._all_houses):
             diff_coord = annotation[:-1, 1:] - annotation[1:, 1:]
             valids = abs(diff_coord) <= self.max_local_distance
             valids = valids.all(dim=1).nonzero(as_tuple=True)[0]
             self._valid_indices[i] = valids.tolist()
 
         self._flattened_valid_indices = []
+        self.label2flattened_indices = defaultdict(list)
         for i, indices in self._valid_indices.items():
             for j in indices:
                 self._flattened_valid_indices.append((i, j))
-
+                label = self._all_houses[i][1][j]
+                self.label2flattened_indices[label].append(
+                        len(self._flattened_valid_indices) - 1
+                    )
 
 if __name__ == "__main__":
     work_dir = osp.join(osp.dirname(osp.abspath(__file__)), "..")

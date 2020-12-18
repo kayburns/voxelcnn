@@ -68,7 +68,14 @@ class Checkpointer(object):
         optimizer: Optional[optim.Optimizer] = None,
         scheduler: Optional[optim.lr_scheduler._LRScheduler] = None,
     ) -> Dict[str, Any]:
-        ckp = torch.load(self._get_path(load_from))
+        if torch.cuda.is_available():
+            ckp = torch.load(self._get_path(load_from))
+        else:
+            ckp = torch.load(
+                    self._get_path(load_from),
+                    map_location=torch.device('cpu')
+                )
+
         if model is not None:
             model.load_state_dict(ckp["model"])
         if optimizer is not None:

@@ -155,6 +155,7 @@ class Craft3DDataset(Dataset):
         local_size: int = 7,
         global_size: int = 21,
         history: int = 3,
+        center: tuple = None
     ) -> Dict[str, torch.Tensor]:
         """ Convert annotation to input tensors
 
@@ -174,6 +175,14 @@ class Craft3DDataset(Dataset):
             where C is the number of block types, H is the history length, D is the
             local size, and G is the global size.
         """
+        if center:
+            center = (0,) + center
+            for b, x, y, z in annotation:
+                if (0, x, y, z) == center:
+                    center[0] = b
+                    break
+            annotation.append(center)
+
         global_inputs = Craft3DDataset._convert_to_voxels(
             annotation, size=global_size, occupancy_only=True
         )

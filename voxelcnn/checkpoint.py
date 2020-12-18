@@ -61,6 +61,41 @@ class Checkpointer(object):
                 osp.join(self.root_dir, "best.pth"),
             )
 
+    def save_last_layers(
+        self,
+        model: nn.Module,
+        optimizer: optim.Optimizer,
+        scheduler: optim.lr_scheduler._LRScheduler,
+        epoch: int,
+        metric: float,
+    ):
+        if self.best_metric < metric:
+            self.best_metric = metric
+            self.best_epoch = epoch
+            is_best = True
+        else:
+            is_best = False
+
+        os.makedirs(self.root_dir, exist_ok=True)
+        last_layers = {k:v for k,v in model.state_dict().items() if 'predictor' in k}
+        torch.save(
+            {
+                "model": last_layers,
+                "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict(),
+                "epoch": epoch,
+                "best_epoch": self.best_epoch,
+                "best_metric": self.best_metric,
+            },
+            osp.join(self.root_dir, f"{epoch:02d}.pth"),
+        )
+
+        if is_best:
+            shutil.copy(
+                osp.join(self.root_dir, f"{epoch:02d}.pth"),
+                osp.join(self.root_dir, "best.pth"),
+            )
+
     def load(
         self,
         load_from: str,
@@ -76,6 +111,27 @@ class Checkpointer(object):
         if scheduler is not None:
             scheduler.load_state_dict(ckp["scheduler"])
         return ckp
+
+    def load_last_layers(
+        self,
+        load_from: str,
+        model: Optional[nn.Module] = None,
+        optimizer: Optional[optim.Optimizer] = None,
+        scheduler: Optional[optim.lr_scheduler._LRScheduler] = None,
+    ) -> Dict[str, Any]:
+        # TODO hack
+        label_path = self._get_path(load_from)
+        last_layers = torch.load(label_path)
+        base_path = label_path.replace(label_path.split('/')[-2], '')
+        base_layers = torch.load(base_path)
+        if model is not None:
+            for k, v in last_layers["model"].items():
+                base_layers["model"][k] = v
+            model.load_state_dict(base_layers["model"])
+        if optimizer is not None:
+            optimizer.load_state_dict(last_layers["optimizer"])
+        if scheduler is not None:
+            scheduler.load_state_dict(last_layers["scheduler"])
 
     def resume(
         self,

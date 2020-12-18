@@ -14,6 +14,7 @@ from time import time as tic
 
 import numpy as np
 import torch
+import wandb
 from torch import optim
 from torch.utils.data import DataLoader
 from voxelcnn.checkpoint import Checkpointer
@@ -121,6 +122,7 @@ def train(
         losses = criterion(outputs, targets)
         with torch.no_grad():
             metrics = {k: float(v(outputs, targets)) for k, v in evaluators.items()}
+            #wandb.log(metrics)
 
         optimizer.zero_grad()
         losses["overall_loss"].backward()
@@ -174,22 +176,26 @@ def main(args):
     logger = setup_logger(save_file=log_path)
     logger.info(f"Save logs to: {log_path}")
 
-    with Section("Global setup", logger=logger):
-        global_setup(args)
+    print("Global setup")
+    global_setup(args)
 
-    with Section("Building data loaders", logger=logger):
-        data_loaders = build_data_loaders(args, logger)
+    print("Building data loaders")
+    data_loaders = build_data_loaders(args, logger)
 
-    with Section("Building model", logger=logger):
-        model = build_model(args, logger)
+    print("Building model")
+    model = build_model(args, logger)
 
-    with Section("Building criterions, optimizer, scheduler", logger=logger):
-        criterion = build_criterion(args)
-        optimizer = build_optimizer(args, model)
-        scheduler = build_scheduler(args, optimizer)
+    print("Building criterions, optimizer, scheduler")
+    criterion = build_criterion(args)
+    optimizer = build_optimizer(args, model)
+    scheduler = build_scheduler(args, optimizer)
 
-    with Section("Building evaluators", logger=logger):
-        evaluators = build_evaluators(args)
+    print("Building evaluators")
+    evaluators = build_evaluators(args)
+
+    #print("wandb setup")
+    #wandb.init(project="step-visprim")
+    #wandb.config.label = "global"
 
     checkpointer = Checkpointer(args.save_dir)
     last_epoch = 0
@@ -199,8 +205,10 @@ def main(args):
                 args.resume, model=model, optimizer=optimizer, scheduler=scheduler
             )
 
+    import pdb; pdb.set_trace()
+    print("are you sure you want to train from scratch?")
     for epoch in range(last_epoch + 1, args.num_epochs + 1):
-        with Section(f"Training epoch {epoch}", logger=logger):
+        with Section("Training epoch {epoch}", logger=logger):
             train(
                 args,
                 epoch,
@@ -220,6 +228,8 @@ def main(args):
             # Use acc@10 as the key metric to select best model
             checkpointer.save(model, optimizer, scheduler, epoch, metrics["acc@10"])
             metrics_str = "  ".join(f"{k}: {v:.3f}" for k, v in metrics.items())
+            metrics = {"val_"+k:v for k,v in metrics}
+            #wandb.log(metrics)
             best_mark = "*" if epoch == checkpointer.best_epoch else ""
             logger.info(f"Finish  epoch: {epoch}  {metrics_str} {best_mark}")
 

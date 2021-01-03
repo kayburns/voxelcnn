@@ -69,6 +69,59 @@ class Predictor(object):
         predictions = torch.cat(predictions, dim=0)
         return predictions.squeeze()
 
+    def predict_while_confident(
+            self, annotation: torch.Tensor,
+            min_steps: int = 1,
+            max_steps: int = 100
+    ) -> torch.Tensor:
+        """ Continuous prediction for given steps starting from a prebuilt house
+
+        Args:
+            annotation (torch.Tensor): M x 4 int tensor, where M is the number of
+                prebuilt blocks. The first column is the block type, followed by the
+                absolute block coordinates.
+            steps (int): How many steps to predict. Default: 1
+
+        Returns:
+            An int tensor of (steps, 4) if steps > 1, otherwise (4,). Denoting the
+            predicted blocks. The first column is the block type, followed by the
+            absolute block coordinates.
+        """
+        predictions = []
+        confs = []
+        for step in range(max_steps):
+            inputs = Craft3DDataset.prepare_inputs(
+                annotation,
+                local_size=self.local_size,
+                global_size=self.global_size,
+                history=self.history,
+            )
+            inputs = {k: v.unsqueeze(0) for k, v in inputs.items()}
+            if next(self.model.parameters()).is_cuda:
+                inputs = {k: v.cuda() for k, v in inputs.items()}
+            outputs = self.model(inputs)
+            prediction = self.decode(outputs).cpu()
+            # only continue if confident in prediction
+            coords_conf = outputs["coords"].view(1, -1).max(dim=1)[0]
+            N, C, D, D, D = outputs["types"].shape
+            coords_predictions = outputs["coords"].view(N, -1).argmax(dim=1)
+            types_conf = (
+                outputs["types"]
+                .view(N, C, D * D * D)
+                .gather(dim=2, index=coords_predictions.view(N, 1, 1).expand(N, C, 1))
+                .max(dim=1)[0]
+            )
+            confs.append((float(coords_conf), float(types_conf)))
+            if (coords_conf < 1 or types_conf < 1) and step > min_steps:
+                print("Reached step {step}")
+                break
+            # proceed as usual
+            predictions.append(prediction)
+            annotation = torch.cat([annotation, prediction], dim=0)
+        predictions = torch.cat(predictions, dim=0)
+        import pdb; pdb.set_trace()
+        return predictions.squeeze()
+
     @torch.no_grad()
     def predict_until_wrong(
         self, annotation: torch.Tensor, start: int = 0
@@ -153,7 +206,9 @@ class Predictor(object):
         }
 
     @staticmethod
-    def decode(outputs: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def decode(
+        outputs: Dict[str, torch.Tensor], conf: bool = False
+    ) -> torch.Tensor:
         """ Convert model output scores to absolute block coordinates and types
 
         Args:

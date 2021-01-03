@@ -82,13 +82,14 @@ class GeneratorWrapper():
         return # TODO
 
     def generate_build_proposal(self, ref_blocks, steps=10):
-        return self.predictor.predict(ref_blocks, steps=steps)
-    
-    def get_proposal(self, ref_block_dict, label):
-        #ref_blocks = list(ref_block_dict.items())
-        ref_blocks = ref_block_dict
         ref_blocks = torch.tensor([(b[0],) + xyz for (xyz, b) in ref_blocks])
+        new_blocks = self.predictor.predict_while_confident(
+            ref_blocks, min_steps=10, max_steps=100
+        )
+        return [((x, y, z), (b, 0)) for (b, x, y, z) in new_blocks.tolist()]
+    
+    def get_proposal(self, ref_blocks, label):
+        self.checkpointer.load_last_layers(label, model=self.model)
         new_blocks = self.generate_build_proposal(ref_blocks, steps=30)
-        new_blocks = [((x, y, z), (b, 0)) for (b, x, y, z) in new_blocks.tolist()]
         return new_blocks
 

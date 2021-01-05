@@ -1,34 +1,77 @@
+import math
+import os
 import argparse
+from glob import glob
 import numpy as np
+import torch
 
-from .predictor import Predictor
-from .checkpoint import Checkpointer
-from .models import VoxelCNN
+from voxelcnn.predictor import Predictor
+from voxelcnn.checkpoint import Checkpointer
+from voxelcnn.models import VoxelCNN
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="examine and inspect prototypes from each label generator"
     )
-    parser.add_argument("--npy_schematic", type=str, help="Path to npy house")
+    parser.add_argument(
+        "--npy_schematic", type=str, default="programmed_houses/house.npy",
+        help="Path to npy house"
+    )
+    parser.add_argument("--debug", action='store_true')
+    parser.add_argument(
+        "--save_dir", type=str, default="./prototypes",
+        help="Path to save visualizations"
+    )
     args = parser.parse_args()
+
+    if args.debug:
+        import pdb; pdb.set_trace()
 
     # model setup
     save_file_path = '/craftassist/python/VoxelCNN/logs/'
     model = VoxelCNN()
     checkpointer = Checkpointer(save_file_path)
     best_epoch = checkpointer.best_epoch
-    checkpointer.load("best", model=model)a
+    checkpointer.load("best", model=model)
     predictor = Predictor(model.eval())
 
     # load schematic
     np_house = np.load(args.npy_schematic)
     xyz_s = np.vstack(np_house.nonzero()[:-1])
     b_s = np_house[np_house != 0]
-    house = np.vstack(b_s, xyz_s)
+    house = np.vstack((b_s, xyz_s))
+
+    # resort based on desired block placement
+    def dist(xyzb):
+        x, y, z = xyzb[1:]
+        ox, oy, oz = [5, 5, 7]
+        return math.sqrt((x - ox)**2 + (y - oy)**2 + (z - oz)**2)
+    house = sorted(house.T, key=dist, reverse=True)
+    house = np.array(house)
+    house_t = torch.tensor(house).long()
+
+    # fetch label names from log dir
+    label_format = os.path.join(save_file_path, '*/')
+    labels = glob(label_format)
+    labels = [lbl.split('/')[-2] for lbl in labels]
 
     for label in labels:
+
+        # predict next labels
         checkpointer.load_last_layers(label, model=model)
         new_blocks = predictor.predict_while_confident(
-            house, min_steps=10, max_steps=100
+            house_t, min_steps=10, max_steps=100
         )
+        new_house = np.vstack((house, new_blocks)).astype(int)
+        
+        # reformat to occupancy
+        _, max_x, max_y, max_z = np.max(new_house, axis=0)
+        _, min_x, min_y, min_z = np.min(new_house, axis=0)
+        house_w_prim = np.zeros((max_x-min_x+1, max_y-min_y+1, max_z-min_z+1))
+        new_house -= [0, min_x, min_y, min_z]
+        house_w_prim[tuple(new_house[:,1:].T)] = new_house[:, 0]
+        
+        # save
+        save_file_path = os.path.join(args.save_dir, label+".npy")
+        np.save(save_file_path, house_w_prim)
 

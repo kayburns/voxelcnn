@@ -118,8 +118,7 @@ class Predictor(object):
             # proceed as usual
             predictions.append(prediction)
             annotation = torch.cat([annotation, prediction], dim=0)
-        predictions = torch.cat(predictions, dim=0)
-        import pdb; pdb.set_trace()
+        predictions = torch.cat(predictions, dim=0).numpy()
         return predictions.squeeze()
 
     @torch.no_grad()

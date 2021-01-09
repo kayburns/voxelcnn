@@ -122,7 +122,6 @@ def train(
         losses = criterion(outputs, targets)
         with torch.no_grad():
             metrics = {k: float(v(outputs, targets)) for k, v in evaluators.items()}
-            #wandb.log(metrics)
 
         optimizer.zero_grad()
         losses["overall_loss"].backward()
@@ -138,6 +137,8 @@ def train(
         summary.print_current(
             prefix=f"[{epoch}/{args.num_epochs}][{i + 1}/{len(data_loader)}]"
         )
+        wandb.log(metrics)
+        wandb.log(losses)
         timestamp = tic()
     scheduler.step()
 

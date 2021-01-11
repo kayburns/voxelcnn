@@ -87,6 +87,11 @@ def build_optimizer(args, model):
     )
 
 def main(args):
+
+    if args.debug:
+        import pdb; pdb.set_trace()
+        args.num_workers = 0
+
     # Set log file name based on current date and time
     cur_datetime = datetime.now().strftime("%Y%m%d.%H%M%S")
     log_path = osp.join(args.save_dir, f"log.{cur_datetime}.txt")
@@ -138,6 +143,9 @@ def main(args):
         if args.log:
             wandb.init(project="step-visprim", reinit=True)
             wandb.config.label = label
+            wandb.config.batch_size = args.batch_size
+            wandb.config.num_epochs = args.num_epochs
+            wandb.config.last_epoch = last_epoch
 
         for epoch in range(last_epoch + 1, args.num_epochs + 1):
             with Section("Training epoch {epoch}", logger=logger):
@@ -230,6 +238,7 @@ if __name__ == "__main__":
     parser.add_argument("--gamma", type=int, default=0.1, help="StepLR gamma")
     parser.add_argument("--num_epochs", type=int, default=16, help="Total train epochs")
     # Misc
+    parser.add_argument("--debug", action="store_true", help="set breakpoint")
     parser.add_argument(
         "--log", action="store_true", help="Enables wandb logging"
     )

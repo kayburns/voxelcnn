@@ -332,15 +332,14 @@ class Craft3DDataset(Dataset):
                 continue
             annotation, labels = self._load_annotation(annotation)
             if len(annotation) >= 100:
-                # re-sorting annotation based on distance to point
-                annotation = annotation.float()
-                max_point = torch.norm(annotation[:,:3], dim=1).argmax()
-                max_point = annotation[:,:3][max_point]
-                def dist(xyzb):
-                    return torch.norm(max_point - xyzb[:3])
-                annotation = sorted(annotation, key=dist, reverse=True)
-                annotation = torch.stack(annotation).long()
-                # re-sorting annotation based on distance to point
+                # # re-sorting annotation based on distance to point
+                # annotation = annotation.float()
+                # max_point = torch.norm(annotation[:,:3], dim=1).argmax()
+                # max_point = annotation[:,:3][max_point]
+                # def dist(xyzb):
+                #     return torch.norm(max_point - xyzb[:3])
+                # annotation = sorted(annotation, key=dist, reverse=True)
+                # annotation = torch.stack(annotation).long()
                 self._all_houses.append((annotation, labels))
                 max_len = max(max_len, len(annotation))
 

@@ -139,7 +139,7 @@ def main(args):
             os.makedirs(label_dir)
         label_checkpointer = Checkpointer(label_dir)
 
-        print("wandb setup for {label}")
+        print("wandb setup for {}".format(label))
         if args.log:
             wandb.init(project="step-visprim", reinit=True)
             wandb.config.label = label

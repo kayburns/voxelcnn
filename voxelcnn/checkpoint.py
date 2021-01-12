@@ -103,7 +103,14 @@ class Checkpointer(object):
         optimizer: Optional[optim.Optimizer] = None,
         scheduler: Optional[optim.lr_scheduler._LRScheduler] = None,
     ) -> Dict[str, Any]:
-        ckp = torch.load(self._get_path(load_from))
+        if torch.cuda.is_available():
+            ckp = torch.load(self._get_path(load_from))
+        else:
+            ckp = torch.load(
+                    self._get_path(load_from),
+                    map_location=torch.device('cpu')
+                )
+
         if model is not None:
             model.load_state_dict(ckp["model"])
         if optimizer is not None:
@@ -119,15 +126,13 @@ class Checkpointer(object):
         optimizer: Optional[optim.Optimizer] = None,
         scheduler: Optional[optim.lr_scheduler._LRScheduler] = None,
     ) -> Dict[str, Any]:
-        # TODO hack
+        load_from = load_from + '/best'
         label_path = self._get_path(load_from)
-        last_layers = torch.load(label_path)
-        base_path = label_path.replace(label_path.split('/')[-2], '')
-        base_layers = torch.load(base_path)
+        last_layers = torch.load(label_path, map_location='cpu')
+        model_dict = model.state_dict()
+        model_dict.update(last_layers["model"])
         if model is not None:
-            for k, v in last_layers["model"].items():
-                base_layers["model"][k] = v
-            model.load_state_dict(base_layers["model"])
+            model.load_state_dict(model_dict)
         if optimizer is not None:
             optimizer.load_state_dict(last_layers["optimizer"])
         if scheduler is not None:
@@ -154,4 +159,4 @@ class Checkpointer(object):
             return sorted(glob(osp.join(self.root_dir, "[0-9]*.pth")))[-1]
         if load_from.isnumeric():
             return osp.join(self.root_dir, f"{int(load_from):02d}.pth")
-        return load_from
+        return osp.join(self.root_dir, load_from+'.pth')

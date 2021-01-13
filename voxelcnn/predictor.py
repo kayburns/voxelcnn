@@ -59,6 +59,7 @@ class Predictor(object):
                 global_size=self.global_size,
                 history=self.history,
             )
+            # batch size of 1
             inputs = {k: v.unsqueeze(0) for k, v in inputs.items()}
             if next(self.model.parameters()).is_cuda:
                 inputs = {k: v.cuda() for k, v in inputs.items()}
@@ -72,7 +73,8 @@ class Predictor(object):
     def predict_while_confident(
             self, annotation: torch.Tensor,
             min_steps: int = 1,
-            max_steps: int = 100
+            max_steps: int = 100,
+            no_loc_given: bool = True
     ) -> torch.Tensor:
         """ Continuous prediction for given steps starting from a prebuilt house
 
@@ -87,15 +89,21 @@ class Predictor(object):
             predicted blocks. The first column is the block type, followed by the
             absolute block coordinates.
         """
+        import pdb; pdb.set_trace()
         predictions = []
         confs = []
         for step in range(max_steps):
+            local_size = (21
+                if step==0 and no_loc_given
+                else self.local_size
+            )
             inputs = Craft3DDataset.prepare_inputs(
                 annotation,
-                local_size=self.local_size,
+                local_size=local_size,
                 global_size=self.global_size,
                 history=self.history,
             )
+            # create input with history of 1
             inputs = {k: v.unsqueeze(0) for k, v in inputs.items()}
             if next(self.model.parameters()).is_cuda:
                 inputs = {k: v.cuda() for k, v in inputs.items()}

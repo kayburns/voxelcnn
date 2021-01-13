@@ -17,6 +17,11 @@ if __name__ == "__main__":
         "--npy_schematic", type=str, default="programmed_houses/house.npy",
         help="Path to npy house"
     )
+    parser.add_argument(
+        "--model_dir", type=str, default="/craftassist/python/VoxelCNN/logs/",
+        help="directory with models per label"
+    )
+ 
     parser.add_argument("--debug", action='store_true')
     parser.add_argument(
         "--save_dir", type=str, default="./prototypes",
@@ -28,15 +33,15 @@ if __name__ == "__main__":
         import pdb; pdb.set_trace()
 
     # model setup
-    save_file_path = '/craftassist/python/VoxelCNN/logs/'
     model = VoxelCNN()
-    checkpointer = Checkpointer(save_file_path)
+    checkpointer = Checkpointer(args.model_dir)
     best_epoch = checkpointer.best_epoch
     checkpointer.load("best", model=model)
     predictor = Predictor(model.eval())
 
     # load schematic
     np_house = np.load(args.npy_schematic)
+    # np_house[7-1,:9,:9,0] = 0 # take off the roof
     xyz_s = np.vstack(np_house.nonzero()[:-1])
     b_s = np_house[np_house != 0]
     house = np.vstack((b_s, xyz_s))
@@ -44,14 +49,15 @@ if __name__ == "__main__":
     # resort based on desired block placement
     def dist(xyzb):
         x, y, z = xyzb[1:]
-        ox, oy, oz = [5, 5, 7]
+        ox, oy, oz = [7, 0, 0]
         return math.sqrt((x - ox)**2 + (y - oy)**2 + (z - oz)**2)
+
     house = sorted(house.T, key=dist, reverse=True)
     house = np.array(house)
     house_t = torch.tensor(house).long()
 
     # fetch label names from log dir
-    label_format = os.path.join(save_file_path, '*/')
+    label_format = os.path.join(args.model_dir, '*/')
     labels = glob(label_format)
     labels = [lbl.split('/')[-2] for lbl in labels]
 
@@ -67,10 +73,19 @@ if __name__ == "__main__":
         # reformat to occupancy
         _, max_x, max_y, max_z = np.max(new_house, axis=0)
         _, min_x, min_y, min_z = np.min(new_house, axis=0)
-        house_w_prim = np.zeros((max_x-min_x+1, max_y-min_y+1, max_z-min_z+1))
+        house_w_prim = np.zeros((max_x-min_x+1, max_y-min_y+1, max_z-min_z+1, 2))
         new_house -= [0, min_x, min_y, min_z]
-        house_w_prim[tuple(new_house[:,1:].T)] = new_house[:, 0]
+
+        # first add old blocks
+        n, _ = house.shape
+        idxs = tuple(house[:,1:].T.astype(int)) + (np.zeros(n).astype(int),)
+        house_w_prim[idxs] = house[:, 0]
         
+        # then add new_blocks
+        n, _ = new_blocks.shape
+        idxs = tuple(new_blocks[:,1:].T) + (np.zeros(n).astype(int),)
+        house_w_prim[idxs] = new_blocks[:, 0]
+
         # save
         save_file_path = os.path.join(args.save_dir, label+".npy")
         np.save(save_file_path, house_w_prim)

@@ -97,13 +97,26 @@ class VoxelCNN(nn.Module):
             }
             ```
         """
-        outputs = torch.cat(
-            [
-                self.local_encoder(inputs["local"]),
-                self.global_encoder(inputs["global"]),
-            ],
-            dim=1,
-        )
+        # for first prediction, local_size is same as global, so we remove pool
+        if inputs["local"].shape[-1] == inputs["global"].shape[-1]:
+            global_out = self.global_encoder[:6](inputs["global"])
+            global_out = self.global_encoder[7:](global_out)
+            
+            outputs = torch.cat(
+                [
+                    self.local_encoder(inputs["local"]),
+                    global_out,
+                ],
+                dim=1
+            )
+        else:
+            outputs = torch.cat(
+                [
+                    self.local_encoder(inputs["local"]),
+                    self.global_encoder(inputs["global"]),
+                ],
+                dim=1,
+            )
         outputs = self.feature_extractor(outputs)
         ret = {
             "coords": self.coords_predictor(outputs),

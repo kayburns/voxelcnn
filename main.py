@@ -137,8 +137,9 @@ def train(
         summary.print_current(
             prefix=f"[{epoch}/{args.num_epochs}][{i + 1}/{len(data_loader)}]"
         )
-        wandb.log(metrics)
-        wandb.log(losses)
+        if args.log:
+            wandb.log(metrics)
+            wandb.log(losses)
         timestamp = tic()
     scheduler.step()
 

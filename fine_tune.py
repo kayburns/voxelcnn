@@ -146,6 +146,7 @@ def main(args):
             wandb.config.batch_size = args.batch_size
             wandb.config.num_epochs = args.num_epochs
             wandb.config.last_epoch = last_epoch
+            wandb.config.embedding = True
 
         for epoch in range(last_epoch + 1, args.num_epochs + 1):
             with Section("Training epoch {epoch}", logger=logger):

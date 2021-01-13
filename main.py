@@ -122,7 +122,6 @@ def train(
         losses = criterion(outputs, targets)
         with torch.no_grad():
             metrics = {k: float(v(outputs, targets)) for k, v in evaluators.items()}
-            #wandb.log(metrics)
 
         optimizer.zero_grad()
         losses["overall_loss"].backward()
@@ -138,6 +137,9 @@ def train(
         summary.print_current(
             prefix=f"[{epoch}/{args.num_epochs}][{i + 1}/{len(data_loader)}]"
         )
+        if args.log:
+            wandb.log(metrics)
+            wandb.log(losses)
         timestamp = tic()
     scheduler.step()
 
@@ -176,6 +178,10 @@ def main(args):
     logger = setup_logger(save_file=log_path)
     logger.info(f"Save logs to: {log_path}")
 
+    if args.debug:
+        import pdb; pdb.set_trace()
+        args.num_workers = 0
+
     print("Global setup")
     global_setup(args)
 
@@ -193,9 +199,12 @@ def main(args):
     print("Building evaluators")
     evaluators = build_evaluators(args)
 
-    #print("wandb setup")
-    #wandb.init(project="step-visprim")
-    #wandb.config.label = "global"
+    print("wandb setup")
+    if args.log:
+        wandb.init(project="step-visprim")
+        wandb.config.label = "global"
+        wandb.config.batch_size = args.batch_size
+        wandb.config.num_epochs = args.num_epochs
 
     checkpointer = Checkpointer(args.save_dir)
     last_epoch = 0
@@ -205,8 +214,6 @@ def main(args):
                 args.resume, model=model, optimizer=optimizer, scheduler=scheduler
             )
 
-    import pdb; pdb.set_trace()
-    print("are you sure you want to train from scratch?")
     for epoch in range(last_epoch + 1, args.num_epochs + 1):
         with Section("Training epoch {epoch}", logger=logger):
             train(
@@ -229,7 +236,8 @@ def main(args):
             checkpointer.save(model, optimizer, scheduler, epoch, metrics["acc@10"])
             metrics_str = "  ".join(f"{k}: {v:.3f}" for k, v in metrics.items())
             metrics = {"val_"+k:v for k,v in metrics}
-            #wandb.log(metrics)
+            if args.log:
+                wandb.log(metrics)
             best_mark = "*" if epoch == checkpointer.best_epoch else ""
             logger.info(f"Finish  epoch: {epoch}  {metrics_str} {best_mark}")
 
@@ -250,6 +258,9 @@ def main(args):
         }
         metrics.update(CCA(**params).evaluate(dataset, model))
         metrics.update(MTC(**params).evaluate(dataset, model))
+        metrics_dict = {"best_"+k:v for k,v in metrics.items()}  
+        if args.log:
+            wandb.log(metrics_dict)
 
         metrics_str = "  ".join(f"{k}: {v:.3f}" for k, v in metrics.items())
         logger.info(f"Final test from best epoch: {best_epoch}\n{metrics_str}")
@@ -305,5 +316,7 @@ if __name__ == "__main__":
         "Default: None, will not resume",
     )
     parser.add_argument("--cpu_only", action="store_true", help="Only using CPU")
+    parser.add_argument("--debug", action="store_true", help="Set bpoint. 0 workers")
+    parser.add_argument("--log", action="store_true", help="Enables wandb logging")
     parser.add_argument("--seed", type=int, default=None, help="Random seed")
     main(parser.parse_args())

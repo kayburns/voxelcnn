@@ -87,6 +87,11 @@ def build_optimizer(args, model):
     )
 
 def main(args):
+
+    if args.debug:
+        import pdb; pdb.set_trace()
+        args.num_workers = 0
+
     # Set log file name based on current date and time
     cur_datetime = datetime.now().strftime("%Y%m%d.%H%M%S")
     log_path = osp.join(args.save_dir, f"log.{cur_datetime}.txt")
@@ -105,12 +110,8 @@ def main(args):
 
     print("Building evaluators")
     evaluators = build_evaluators(args)
-
-    #print("wandb setup")
-    #wandb.init(project="step-visprim")
-    #wandb.config.label = "global"
-
     checkpointer = Checkpointer(args.save_dir)
+
     print("Resuming from model: {args.resume}")
     last_epoch = checkpointer.resume(args.resume, model=model)
 
@@ -121,13 +122,13 @@ def main(args):
 
     for label in labels:
 
-        print("Building data loaders")
+        print("Building data loaders for {}".format(label))
         data_loaders = build_data_loaders_per_label(args, label, datasets, logger)
         
-        print("Resetting predictor weights")
+        print("Resetting predictor weights for {}".format(label))
         reset_last_layers(model)
 
-        print("Building criterions, optimizer, scheduler")
+        print("Building criterions, optimizer, scheduler for {}".format(label))
         criterion = build_criterion(args)
         optimizer = build_optimizer(args, model)
         scheduler = build_scheduler(args, optimizer)
@@ -137,6 +138,15 @@ def main(args):
         if not osp.exists(label_dir):
             os.makedirs(label_dir)
         label_checkpointer = Checkpointer(label_dir)
+
+        print("wandb setup for {}".format(label))
+        if args.log:
+            wandb.init(project="step-visprim", reinit=True)
+            wandb.config.label = label
+            wandb.config.batch_size = args.batch_size
+            wandb.config.num_epochs = args.num_epochs
+            wandb.config.last_epoch = last_epoch
+            wandb.config.embedding = True
 
         for epoch in range(last_epoch + 1, args.num_epochs + 1):
             with Section("Training epoch {epoch}", logger=logger):
@@ -151,7 +161,7 @@ def main(args):
                     evaluators,
                     logger,
                 )
-            with Section(f"Validating epoch {epoch}", logger=logger):
+            with Section(f"Validating epoch {epoch} of {label}", logger=logger):
                 # Evaluate on the validation set by the lightweight accuracy metrics
                 metrics = evaluate(
                     args, epoch, data_loaders["val"], model, evaluators, logger
@@ -161,12 +171,13 @@ def main(args):
                         model, optimizer, scheduler, epoch, metrics["acc@1"])
                 metrics_str = "  ".join(f"{k}: {v:.3f}" for k, v in metrics.items())
                 metrics = {"val_"+k:v for k,v in metrics.items()}
-                #wandb.log(metrics)
+                if args.log:
+                    wandb.log(metrics)
                 best_mark = "*" if epoch == checkpointer.best_epoch else ""
                 logger.info(f"Finish  epoch: {epoch}  {metrics_str} {best_mark}")
 
             best_epoch = checkpointer.best_epoch
-            with Section(f"Final test with best model from epoch: {best_epoch}", logger=logger):
+            with Section(f"Final test with best model from epoch of {label}: {best_epoch}", logger=logger):
                 # Load the best model and evaluate all the metrics on the test set
                 label_checkpointer.load_last_layers("best", model=model)
                 metrics = evaluate(
@@ -182,9 +193,12 @@ def main(args):
                 }
                 metrics.update(CCA(**params).evaluate(dataset.dataset, model))
                 #metrics.update(MTC(**params).evaluate(dataset.dataset, model))
+                metrics_dict = {"best_"+k:v for k,v in metrics.items()}
+                if args.log:
+                    wandb.log(metrics_dict)
 
                 metrics_str = "  ".join(f"{k}: {v:.3f}" for k, v in metrics.items())
-                logger.info(f"Final test from best epoch: {best_epoch}\n{metrics_str}")
+                logger.info(f"Final test from best epoch for {label}: {best_epoch}\n{metrics_str}")
 
 
 if __name__ == "__main__":
@@ -213,7 +227,9 @@ if __name__ == "__main__":
         help="When debugging, set this option to limit the number of training samples",
     )
     # Optimizer
-    parser.add_argument("--lr", type=float, default=0.1, help="Initial learning rate")
+    parser.add_argument(
+        "--lr", type=float, default=0.1, help="Initial learning rate"
+    )
     parser.add_argument(
         "--weight_decay", type=float, default=0.0001, help="Weight decay"
     )
@@ -223,6 +239,10 @@ if __name__ == "__main__":
     parser.add_argument("--gamma", type=int, default=0.1, help="StepLR gamma")
     parser.add_argument("--num_epochs", type=int, default=16, help="Total train epochs")
     # Misc
+    parser.add_argument("--debug", action="store_true", help="set breakpoint")
+    parser.add_argument(
+        "--log", action="store_true", help="Enables wandb logging"
+    )
     parser.add_argument(
         "--save_dir",
         type=str,

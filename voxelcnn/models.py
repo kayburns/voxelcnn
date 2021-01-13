@@ -54,8 +54,10 @@ class VoxelCNN(nn.Module):
         self.global_size = global_size
         self.history = history
         self.num_block_types = num_block_types
+        self.block_emb_dim = 4
         self.num_features = num_features
 
+        self.block_encoder = nn.Embedding(self.num_block_types, self.block_emb_dim)
         self.local_encoder = self._build_local_encoder()
         self.global_encoder = self._build_global_encoder()
 
@@ -66,8 +68,12 @@ class VoxelCNN(nn.Module):
             self.num_features, 1, kernel_size=1, padding=0
         )
         self.types_predictor = nn.Conv3d(
-            self.num_features, self.num_block_types, kernel_size=1, padding=0
+            self.num_features, self.block_emb_dim, kernel_size=1, padding=0
         )
+        self.block_decoder = nn.Linear(self.block_emb_dim, self.num_block_types)
+
+        # tie weights of embedding matrices
+        self.block_decoder.weight = self.block_encoder.weight
 
         self._init_params()
 
@@ -83,8 +89,8 @@ class VoxelCNN(nn.Module):
                         blocks, optional
                 }
                 ```
-                where N is the batch size, C is the number of block types, H is the
-                history length, D is the local size, and G is the global size.
+                where N is the batch size, H is the history length, D is the
+                local size, and G is the global size.
 
         Returns:
             A dict of coordinates and types scores
@@ -97,6 +103,10 @@ class VoxelCNN(nn.Module):
             }
             ```
         """
+        # reshape local to work with embedding
+        N, H, D, D, D = inputs["local"].shape
+        inputs["local"] = self.block_encoder(inputs["local"])
+        inputs["local"] = inputs["local"].reshape((N, -1, D, D, D))
         # for first prediction, local_size is same as global, so we remove pool
         if inputs["local"].shape[-1] == inputs["global"].shape[-1]:
             global_out = self.global_encoder[:6](inputs["global"])
@@ -122,12 +132,14 @@ class VoxelCNN(nn.Module):
             "coords": self.coords_predictor(outputs),
             "types": self.types_predictor(outputs),
         }
+        ret["types"] = self.block_decoder(ret["types"].reshape(N, D, D, D, -1))
+        ret["types"] = ret["types"].reshape(N, -1, D, D, D)
         if "center" in inputs:
             ret["center"] = inputs["center"]
         return ret
 
     def _build_local_encoder(self) -> nn.Module:
-        layers = conv3d(self.num_block_types * self.history, self.num_features)
+        layers = conv3d(self.block_emb_dim * self.history, self.num_features)
         for _ in range(3):
             layers.extend(conv3d(self.num_features, self.num_features))
         return nn.Sequential(*layers)

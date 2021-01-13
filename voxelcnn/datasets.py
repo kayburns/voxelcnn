@@ -9,6 +9,7 @@ import json
 import pickle as pkl
 import logging
 import os
+import re
 import tarfile
 import warnings
 from os import path as osp
@@ -68,11 +69,11 @@ class Craft3DDataset(Dataset):
         if not self._has_raw_data():
             self._download()
 
-        # load segmentation mapping to match labels to coords
+        # load segmentation mapping to match houses and coords to labels
         self._load_segmentations()
         # load in placed.json, with blocks sorted by time placed
         self._load_dataset()
-        # enforce local distance maximum
+        # enforce local distance max, create map from labels to flattened coord
         self._find_valid_items()
 
         self.print_stats()
@@ -270,7 +271,7 @@ class Craft3DDataset(Dataset):
         voxels_shape = (
             (1, size, size, size)
             if occupancy_only
-            else (Craft3DDataset.NUM_BLOCK_TYPES, size, size, size)
+            else (size, size, size)
         )
         if len(annotation) == 0:
             return torch.zeros(voxels_shape, dtype=torch.float32)
@@ -288,6 +289,11 @@ class Craft3DDataset(Dataset):
         valid_mask = valid_mask.all(dim=1)
         annotation = annotation[valid_mask]
         # Use sparse tensor to construct the voxels cube
+        if not occupancy_only:
+            voxels = torch.sparse.FloatTensor(
+                    annotation[:,1:].t(), annotation[:,0], voxels_shape
+            ).to_dense()
+            return voxels.unsqueeze(0)
         return torch.sparse.FloatTensor(
             annotation.t(), torch.ones(len(annotation)), voxels_shape
         ).to_dense()
@@ -340,6 +346,14 @@ class Craft3DDataset(Dataset):
                 continue
             annotation, labels = self._load_annotation(annotation)
             if len(annotation) >= 100:
+                # # re-sorting annotation based on distance to point
+                # annotation = annotation.float()
+                # max_point = torch.norm(annotation[:,:3], dim=1).argmax()
+                # max_point = annotation[:,:3][max_point]
+                # def dist(xyzb):
+                #     return torch.norm(max_point - xyzb[:3])
+                # annotation = sorted(annotation, key=dist, reverse=True)
+                # annotation = torch.stack(annotation).long()
                 self._all_houses.append((annotation, labels))
                 max_len = max(max_len, len(annotation))
 
@@ -352,7 +366,8 @@ class Craft3DDataset(Dataset):
         final_house = {}
         types_and_coords = []
         last_timestamp = -1
-        workdir = annotation_path.split("/")[5]
+        pattern = re.compile('workdir[^/]*')
+        workdir = pattern.findall(annotation_path)[0]
         for i, item in enumerate(annotation):
             timestamp, annotator_id, coordinate, block_info, action = item
             assert timestamp >= last_timestamp

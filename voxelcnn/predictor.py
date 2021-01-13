@@ -89,7 +89,6 @@ class Predictor(object):
             predicted blocks. The first column is the block type, followed by the
             absolute block coordinates.
         """
-        import pdb; pdb.set_trace()
         predictions = []
         confs = []
         for step in range(max_steps):

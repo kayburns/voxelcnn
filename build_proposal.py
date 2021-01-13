@@ -66,7 +66,7 @@ class GeneratorWrapper():
 
     def __init__(self):
 
-        save_file_path = '/craftassist/python/VoxelCNN/logs/prims_redo'
+        save_file_path = '/craftassist/python/VoxelCNN/logs/prims_block_emb/'
         self.model = VoxelCNN()
         self.checkpointer = Checkpointer(save_file_path)
         self.best_epoch = self.checkpointer.best_epoch

@@ -182,13 +182,12 @@ class Craft3DDataset(Dataset):
             where C is the number of block types, H is the history length, D is the
             local size, and G is the global size.
         """
-        if center:
-            center = (0,) + center
-            for b, x, y, z in annotation:
-                if (0, x, y, z) == center:
-                    center[0] = b
+        if center is not None:
+            for i, (b, x, y, z) in enumerate(annotation):
+                if (x, y, z) == (center[0], center[1], center[2]):
                     break
-            annotation.append(center)
+            annotation = torch.cat((annotation, annotation[i].unsqueeze(0)))
+            annotation[i,0] = 0
 
         global_inputs = Craft3DDataset._convert_to_voxels(
             annotation, size=global_size, occupancy_only=True

@@ -58,6 +58,7 @@ class Predictor(object):
                 local_size=self.local_size,
                 global_size=self.global_size,
                 history=self.history,
+                center=center
             )
             # batch size of 1
             inputs = {k: v.unsqueeze(0) for k, v in inputs.items()}
@@ -90,7 +91,7 @@ class Predictor(object):
             absolute block coordinates.
         """
         predictions = []
-        confs = []
+        last_coord = annotation[-1, 1:]
         for step in range(max_steps):
             local_size = (21
                 if step==0 and no_loc_given
@@ -102,28 +103,16 @@ class Predictor(object):
                 global_size=self.global_size,
                 history=self.history,
             )
-            # create input with history of 1
             inputs = {k: v.unsqueeze(0) for k, v in inputs.items()}
+            # create input with history of 1
             if next(self.model.parameters()).is_cuda:
                 inputs = {k: v.cuda() for k, v in inputs.items()}
             outputs = self.model(inputs)
             prediction = self.decode(outputs).cpu()
-            # only continue if confident in prediction
-            coords_conf = outputs["coords"].view(1, -1).max(dim=1)[0]
-            N, C, D, D, D = outputs["types"].shape
-            coords_predictions = outputs["coords"].view(N, -1).argmax(dim=1)
-            types_conf = (
-                outputs["types"]
-                .view(N, C, D * D * D)
-                .gather(dim=2, index=coords_predictions.view(N, 1, 1).expand(N, C, 1))
-                .max(dim=1)[0]
-            )
-            confs.append((float(coords_conf), float(types_conf)))
-            if (coords_conf < 1 or types_conf < 1) and step > min_steps:
-                print("Reached step {step}")
-                break
-            # proceed as usual
             predictions.append(prediction)
+            # remove duplicate coordinates from annotation (bc sparse tensor sums)
+            repeat_idx = torch.nonzero(torch.all(annotation[:,1:]==prediction[:,1:],axis=1))
+            annotation[repeat_idx,0] = 0
             annotation = torch.cat([annotation, prediction], dim=0)
         predictions = torch.cat(predictions, dim=0).numpy()
         return predictions.squeeze()

@@ -104,7 +104,6 @@ class Predictor(object):
                 history=self.history,
             )
             inputs = {k: v.unsqueeze(0) for k, v in inputs.items()}
-            # create input with history of 1
             if next(self.model.parameters()).is_cuda:
                 inputs = {k: v.cuda() for k, v in inputs.items()}
             outputs = self.model(inputs)

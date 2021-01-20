@@ -81,24 +81,24 @@ class GeneratorWrapper():
 
         return # TODO
 
-    def generate_build_proposal(self, ref_blocks, steps=None, no_loc_given=True):
+    def generate_build_proposal(self, ref_blocks, steps=20, no_loc_given=True):
         ref_blocks = torch.tensor([(b[0],) + xyz for (xyz, b) in ref_blocks])
         new_blocks = self.predictor.predict_while_confident(
-            ref_blocks, min_steps=10, max_steps=100, no_loc_given=no_loc_given
+            ref_blocks, min_steps=10, max_steps=steps, no_loc_given=no_loc_given
         )
         new_blocks = [((x, y, z), (b, 0)) for (b, x, y, z) in new_blocks.tolist()]
         if steps:
             new_blocks = new_blocks[:steps]
         return new_blocks
     
-    def get_proposal(self, ref_blocks, label, no_loc_given=True):
+    def get_proposal(self, ref_blocks, label, steps=20, no_loc_given=True):
         self.checkpointer.load_last_layers(label, model=self.model)
         if label=='bed' or label=='door':
             steps = 2
         elif label=='torch':
             steps = 5
         else:
-            steps = None
+            steps = steps
 
         new_blocks = self.generate_build_proposal(
             ref_blocks, steps=steps, no_loc_given=no_loc_given)

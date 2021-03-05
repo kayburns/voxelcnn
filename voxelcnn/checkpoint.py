@@ -126,8 +126,8 @@ class Checkpointer(object):
         optimizer: Optional[optim.Optimizer] = None,
         scheduler: Optional[optim.lr_scheduler._LRScheduler] = None,
     ) -> Dict[str, Any]:
-        if 'best' not in load_from:
-            load_from = load_from + '/best'
+        #if 'best' not in load_from:
+        #    load_from = load_from + '/best'
         label_path = self._get_path(load_from)
         if torch.cuda.is_available():
             last_layers = torch.load(label_path)

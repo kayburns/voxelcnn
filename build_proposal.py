@@ -66,8 +66,9 @@ class GeneratorWrapper():
 
     def __init__(self):
 
-        save_file_path = '/craftassist/python/VoxelCNN/logs/prims_block_emb_bs_32/'
-        self.model = VoxelCNN()
+        save_file_path = '/craftassist/python/VoxelCNN/logs/prims_block_emb_feat32/'
+        #save_file_path = '/craftassist/python/VoxelCNN/logs/prims_block_emb_feat32/'
+        self.model = VoxelCNN(num_features=32)
         self.checkpointer = Checkpointer(save_file_path)
         self.best_epoch = self.checkpointer.best_epoch
         self.checkpointer.load("best", model=self.model)
@@ -92,7 +93,7 @@ class GeneratorWrapper():
         return new_blocks
     
     def get_proposal(self, ref_blocks, label, steps=20, no_loc_given=True):
-        self.checkpointer.load_last_layers(label, model=self.model)
+        self.checkpointer.load_last_layers(label+'/16', model=self.model)
         if label=='bed' or label=='door':
             steps = 2
         elif label=='torch':

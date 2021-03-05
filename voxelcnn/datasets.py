@@ -270,7 +270,8 @@ class Craft3DDataset(Dataset):
         voxels_shape = (
             (1, size, size, size)
             if occupancy_only
-            else (size, size, size)
+            else (size, size, size) # EMB
+            #else (Craft3DDataset.NUM_BLOCK_TYPES, size, size, size)
         )
         if len(annotation) == 0:
             return torch.zeros(voxels_shape, dtype=torch.float32)
@@ -287,7 +288,7 @@ class Craft3DDataset(Dataset):
         valid_mask = (annotation[:, 1:] >= 0) & (annotation[:, 1:] < size)
         valid_mask = valid_mask.all(dim=1)
         annotation = annotation[valid_mask]
-        # Use sparse tensor to construct the voxels cube
+        # Use sparse tensor to construct the voxels cube, EMB
         if not occupancy_only:
             voxels = torch.sparse.FloatTensor(
                     annotation[:,1:].t(), annotation[:,0], voxels_shape

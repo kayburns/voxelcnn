@@ -22,6 +22,7 @@ if __name__ == "__main__":
         help="directory with models per label"
     )
  
+    parser.add_argument("--ft_epoch", action='store_true')
     parser.add_argument("--debug", action='store_true')
     parser.add_argument(
         "--save_dir", type=str, default="./prototypes",
@@ -125,11 +126,11 @@ if __name__ == "__main__":
     prototypes = [(top, 'wall'), (top_no_roof, 'wall'), \
         (side_mid, 'wall'), (side_mid_nowall, 'wall'), \
         (side_topright, 'wall'), (side_topright_nowall, 'wall'), \
-        (front_topmid, 'stairs'), (front_botmid, 'fence'), \
+        (front_topmid, 'stair'), (front_botmid, 'fence'), \
         (botmid, 'bookcase'), (botside_nowall, 'floor'), \
-        (botmid, 'stairs'), (top_no_roof,'roof')]
+        (botmid, 'stair'), (top_no_roof,'roof')]
 
-    train_conds = ['prims_block_emb_feat32_type5']
+    train_conds = ['prims_block_emb_feat32']
 
     for train_cond in train_conds:
 
@@ -154,7 +155,9 @@ if __name__ == "__main__":
             house_t = torch.tensor(house).long()
 
             # predict next labels
-            checkpointer.load_last_layers(label+'/best', model=model)
+            checkpointer.load_last_layers(
+                label+f'/{args.ft_epoch}', model=model
+            )
             new_blocks = predictor.predict_while_confident(
                 house_t, min_steps=10, max_steps=100
             )
@@ -178,7 +181,8 @@ if __name__ == "__main__":
 
             # save
             save_file_path = os.path.join(
-                args.save_dir, "{}_{}_{}_best.npy".format(label, train_cond, schematic.__name__)
+                args.save_dir,
+                f"{label}_{train_cond}_{schematic.__name__}_{args.ft_epoch}.npy"
             )
             print("Saving to {}".format(save_file_path))
             np.save(save_file_path, house_w_prim)
